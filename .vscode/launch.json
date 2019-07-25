@@ -7,8 +7,17 @@
         {
             "type": "node",
             "request": "launch",
-            "name": "Launch Program",
-            "program": "${workspaceFolder}/divide/index.js",
+            "name": "Read",
+            "program": "${workspaceFolder}/read/index.js",
+            "outFiles": [
+                "${workspaceFolder}/**/*.js"
+            ]
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Create",
+            "program": "${workspaceFolder}/create/index.js",
             "outFiles": [
                 "${workspaceFolder}/**/*.js"
             ]

@@ -15,6 +15,7 @@
     "elastic-apm-node": "^2.12.1",
     "elasticsearch": "^16.3.0",
     "express": "^4.17.1",
+    "mongoose": "^5.6.6",
     "uuid": "^3.3.2"
   }
 }

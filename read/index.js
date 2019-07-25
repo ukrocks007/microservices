@@ -4,30 +4,49 @@ const app = express();
 const cors = require('cors');
 const config = require("./config");
 const uuidv4 = require('uuid/v4');
+var mongoose = require('mongoose');
+const shows = require("./model/shows");
 
 var elasticsearch = require('elasticsearch');
 var client = new elasticsearch.Client({
     hosts: ['http://elastic:changeme@elasticsearch:9200']
 });
 
-const connect = async () => client.ping({
-    requestTimeout: 30000,
-}, function (error) {
-    if (error) {
-        console.error('elasticsearch cluster is down!');
-    } else {
-        console.log('Everything is ok');
-        client.indices.create({
-            index: 'minus-log'
-        }, function (err, resp, status) {
-            if (!err) {
-                console.log("create", resp);
-            }
-        });
-    }
-});
+let mongoHealth = false,
+    elkHealth = false;
 
-setInterval(function(){ connect(); }, 5000);
+const connect = async () => {
+    client.ping({
+        requestTimeout: 30000,
+    }, function (error) {
+        if (error) {
+            console.error('elasticsearch cluster is down!');
+        } else {
+            console.log('Everything is ok');
+            elkHealth = true;
+            client.indices.create({
+                index: 'plus-log'
+            }, function (err, resp, status) {
+                if (!err) {
+                    console.log("create", resp);
+                }
+            });
+        }
+    });
+    mongoose.connect("mongodb://mongodb:27017/microservice", function (error) {
+        if (error) {
+            console.log("error" + error);
+        } else {
+            mongoHealth = true;
+            console.log("open done")
+        }
+    });
+};
+
+setInterval(function () {
+    if (!mongoHealth || !elkHealth)
+        connect();
+}, 5000);
 
 app.use((req, res, next) => {
     req["startTime"] = (+new Date()).toString();
@@ -51,45 +70,23 @@ app.use(function (req, res, next) {
     next();
 });
 
-app.post("/minus", (req, res, next) => {
-    try {
-        console.log(req.body);
-        res.status(200).json({
-            Answer: parseInt(req.body.a) - parseInt(req.body.b)
-        });
-
-        client.index({
-            index: 'minus-log',
-            id: uuidv4(),
-            type: 'GET',
-            body: {
-                inputs: req.body,
-                start: req.startTime,
-                end: (+new Date()).toString()
-            }
-        }, function (err, resp, status) {
-            console.log(resp);
-        });
-
-    } catch (ex) {
-        console.log(ex);
-        next(ex);
-    }
-});
-
-app.get("/minus", (req, res, next) => {
+app.get("/read", async (req, res, next) => {
     try {
         console.log(req.query);
-        res.status(200).json({
-            Answer: parseInt(req.query.a) - parseInt(req.query.b)
-        });
+        var pattern = req.query.title;
+        pattern = new RegExp(pattern)
+        let data = await shows.find(
+            { title: { "$regex": pattern, "$options": "i" }});
+
+        res.status(200).json(data);
 
         client.index({
-            index: 'minus-log',
+            index: 'read-log',
             id: uuidv4(),
             type: 'GET',
             body: {
                 inputs: req.query,
+                output: data,
                 start: req.startTime,
                 end: (+new Date()).toString()
             }
@@ -105,7 +102,7 @@ app.get("/minus", (req, res, next) => {
 
 app.use((err, req, res, next) => {
     const errorObj = {
-        service: "minus"
+        service: "read"
     };
     if (err.status === 400) {
         if (err.validationErrors) {
@@ -130,9 +127,10 @@ app.use((err, req, res, next) => {
 
         errorObj.message = err.message || "Unknown Error Occurred";
     }
-
+    mongoHealth = false;
+    elkHealth = false;
     client.index({
-        index: 'minus-log',
+        index: 'read-log',
         id: uuidv4(),
         type: 'GET',
         body: errorObj

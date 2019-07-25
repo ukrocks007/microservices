@@ -47,24 +47,33 @@ services:
       - kong-net
     depends_on:
       - elasticsearch
+
+  mongodb:
+    image: mongo
+    ports:
+    - "27018:27017"
+    networks:
+      - kong-net
   
-  plus:
-    build: ./plus
+  create:
+    build: ./create
     ports:
       - "3000:3000"
     networks:
       - kong-net
     depends_on:
       - elasticsearch
+      - mongodb
 
-  minus:
-    build: ./minus
+  read:
+    build: ./read
     ports:
       - "3001:3001"
     networks:
       - kong-net
     depends_on:
       - elasticsearch
+      - mongodb
 
   multiply:
     build: ./multiply
@@ -74,6 +83,7 @@ services:
       - kong-net
     depends_on:
       - elasticsearch
+      - mongodb
 
   divide:
     build: ./divide
@@ -83,6 +93,7 @@ services:
       - kong-net
     depends_on:
       - elasticsearch
+      - mongodb
 
 networks:
   kong-net:

@@ -4,21 +4,26 @@ const app = express();
 const cors = require('cors');
 const config = require("./config");
 const uuidv4 = require('uuid/v4');
+var mongoose = require('mongoose');
 
 var elasticsearch = require('elasticsearch');
 var client = new elasticsearch.Client({
     hosts: ['http://elastic:changeme@elasticsearch:9200']
 });
 
-const connect = async () => client.ping({
+let mongoHealth = false, elkHealth = false;
+
+const connect = async () => {
+    client.ping({
     requestTimeout: 30000,
 }, function (error) {
     if (error) {
         console.error('elasticsearch cluster is down!');
     } else {
         console.log('Everything is ok');
+            elkHealth = true;
         client.indices.create({
-            index: 'divide-log'
+            index: 'plus-log'
         }, function (err, resp, status) {
             if (!err) {
                 console.log("create", resp);
@@ -26,8 +31,20 @@ const connect = async () => client.ping({
         });
     }
 });
+    mongoose.connect("mongodb://mongodb:27017/microservice", function (error) {
+        if (error) {
+            console.log("error" + error);
+        } else {
+            mongoHealth = true;
+            console.log("open done")
+        }
+    });
+};
 
-setInterval(function(){ connect(); }, 5000);
+setInterval(function () {
+    if(!mongoHealth || !elkHealth)
+        connect();
+}, 5000);
 
 app.use((req, res, next) => {
     req["startTime"] = (+new Date()).toString();
@@ -142,7 +159,8 @@ app.use((err, req, res, next) => {
 
         errorObj.message = err.message || "Unknown Error Occurred";
     }
-
+    mongoHealth = false;
+    elkHealth = false;
     client.index({
         index: 'divide-log',
         id: uuidv4(),

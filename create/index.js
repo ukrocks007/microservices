@@ -4,30 +4,49 @@ const app = express();
 const cors = require('cors');
 const config = require("./config");
 const uuidv4 = require('uuid/v4');
+var mongoose = require('mongoose');
+var shows = require("./model/shows");
 
 var elasticsearch = require('elasticsearch');
 var client = new elasticsearch.Client({
     hosts: ['http://elastic:changeme@elasticsearch:9200']
 });
 
-const connect = async () => client.ping({
-    requestTimeout: 30000,
-}, function (error) {
-    if (error) {
-        console.error('elasticsearch cluster is down!');
-    } else {
-        console.log('Everything is ok');
-        client.indices.create({
-            index: 'plus-log'
-        }, function (err, resp, status) {
-            if (!err) {
-                console.log("create", resp);
-            }
-        });
-    }
-});
+let mongoHealth = false,
+    elkHealth = false;
 
-setInterval(function(){ connect(); }, 5000);
+const connect = async () => {
+    client.ping({
+        requestTimeout: 30000,
+    }, function (error) {
+        if (error) {
+            console.error('elasticsearch cluster is down!');
+        } else {
+            console.log('Everything is ok');
+            elkHealth = true;
+            client.indices.create({
+                index: 'create-log'
+            }, function (err, resp, status) {
+                if (!err) {
+                    console.log("create", resp);
+                }
+            });
+        }
+    });
+    mongoose.connect("mongodb://mongodb:27017/microservice", function (error) {
+        if (error) {
+            console.log("error" + error);
+        } else {
+            mongoHealth = true;
+            console.log("open done")
+        }
+    });
+};
+
+setInterval(function () {
+    if (!mongoHealth || !elkHealth)
+        connect();
+}, 5000);
 
 app.use((req, res, next) => {
     req["startTime"] = (+new Date()).toString();
@@ -51,45 +70,37 @@ app.use(function (req, res, next) {
     next();
 });
 
-app.post("/plus", (req, res, next) => {
+app.post("/create", async (req, res, next) => {
     try {
         console.log(req.body);
-        res.status(200).json({
-            Answer: parseInt(req.body.a) + parseInt(req.body.b)
-        });
+
+        let title = req.body.title;
+        let rating = req.body.rating;
+        let ratingLevel = req.body.ratingLevel;
+        let ratingDescription = req.body.ratingDescription;
+        let releaseYear = req.body.releaseYear;
+        let userRatingScore = req.body.userRatingScore;
+        let userRatingSize = req.body.userRatingSize;
+
+        let show = await new shows({
+            title: title,
+            rating: rating,
+            ratingLevel: ratingLevel,
+            ratingDescription: ratingDescription,
+            releaseYear: releaseYear,
+            userRatingScore: userRatingScore,
+            userRatingSize: userRatingSize
+        }).save();
+
+        res.status(200).json(show);
 
         client.index({
-            index: 'plus-log',
+            index: 'create-log',
             id: uuidv4(),
             type: 'GET',
             body: {
                 inputs: req.body,
-                start: req.startTime,
-                end: (+new Date()).toString()
-            }
-        }, function (err, resp, status) {
-            console.log(resp);
-        });
-
-    } catch (ex) {
-        console.log(ex);
-        next(ex);
-    }
-});
-
-app.get("/plus", (req, res, next) => {
-    try {
-        console.log(req.query);
-        res.status(200).json({
-            Answer: parseInt(req.query.a) + parseInt(req.query.b)
-        });
-
-        client.index({
-            index: 'plus-log',
-            id: uuidv4(),
-            type: 'GET',
-            body: {
-                inputs: req.query,
+                output: show,
                 start: req.startTime,
                 end: (+new Date()).toString()
             }
@@ -105,7 +116,7 @@ app.get("/plus", (req, res, next) => {
 
 app.use((err, req, res, next) => {
     const errorObj = {
-        service: "plus"
+        service: "create"
     };
     if (err.status === 400) {
         if (err.validationErrors) {
@@ -130,9 +141,10 @@ app.use((err, req, res, next) => {
 
         errorObj.message = err.message || "Unknown Error Occurred";
     }
-
+    mongoHealth = false;
+    elkHealth = false;
     client.index({
-        index: 'plus-log',
+        index: 'create-log',
         id: uuidv4(),
         type: 'GET',
         body: {
