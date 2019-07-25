@@ -46,6 +46,19 @@ const connect = async () => {
 setInterval(function () {
     if (!mongoHealth || !elkHealth)
         connect();
+    else {
+        client.index({
+            index: 'create-log',
+            id: uuidv4(),
+            type: 'GET',
+            body: {
+                timeStamp: (new Date()).toString(),
+                message: "Everything ok!"
+            }
+        }, function (err, resp, status) {
+            console.log(resp);
+        });
+    } 
 }, 5000);
 
 app.use((req, res, next) => {
