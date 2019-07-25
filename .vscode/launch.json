@@ -16,6 +16,15 @@
         {
             "type": "node",
             "request": "launch",
+            "name": "Update",
+            "program": "${workspaceFolder}/update/index.js",
+            "outFiles": [
+                "${workspaceFolder}/**/*.js"
+            ]
+        },
+        {
+            "type": "node",
+            "request": "launch",
             "name": "Create",
             "program": "${workspaceFolder}/create/index.js",
             "outFiles": [

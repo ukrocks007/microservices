@@ -98,6 +98,8 @@ app.post("/delete", async (req, res, next) => {
     }
 });
 
+app.get("/ping", (req, res) => res.send("pong"));
+
 app.use((err, req, res, next) => {
     const errorObj = {
         service: "delete"
