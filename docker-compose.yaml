@@ -15,6 +15,12 @@ services:
       ELASTIC_PASSWORD: changeme
     networks:
       - kong-net
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
 
   logstash:
     build:
@@ -33,6 +39,12 @@ services:
       - kong-net
     depends_on:
       - elasticsearch
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
 
   kibana:
     build:
@@ -47,6 +59,12 @@ services:
       - kong-net
     depends_on:
       - elasticsearch
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
 
   mongodb:
     image: mongo
@@ -54,6 +72,12 @@ services:
     - "27018:27017"
     networks:
       - kong-net
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
   
   create:
     build: ./create
@@ -64,6 +88,12 @@ services:
     depends_on:
       - elasticsearch
       - mongodb
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
 
   read:
     build: ./read
@@ -74,6 +104,12 @@ services:
     depends_on:
       - elasticsearch
       - mongodb
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
 
   update:
     build: ./update
@@ -84,6 +120,12 @@ services:
     depends_on:
       - elasticsearch
       - mongodb
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
 
   delete:
     build: ./delete
@@ -94,6 +136,12 @@ services:
     depends_on:
       - elasticsearch
       - mongodb
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
 
 networks:
   kong-net:
