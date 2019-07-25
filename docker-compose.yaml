@@ -75,8 +75,8 @@ services:
       - elasticsearch
       - mongodb
 
-  multiply:
-    build: ./multiply
+  update:
+    build: ./update
     ports:
       - "3002:3002"
     networks:
@@ -85,8 +85,8 @@ services:
       - elasticsearch
       - mongodb
 
-  divide:
-    build: ./divide
+  delete:
+    build: ./delete
     ports:
       - "3003:3003"
     networks:

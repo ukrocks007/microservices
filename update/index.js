@@ -5,32 +5,34 @@ const cors = require('cors');
 const config = require("./config");
 const uuidv4 = require('uuid/v4');
 var mongoose = require('mongoose');
+const shows = require("./model/shows");
 
 var elasticsearch = require('elasticsearch');
 var client = new elasticsearch.Client({
     hosts: ['http://elastic:changeme@elasticsearch:9200']
 });
 
-let mongoHealth = false, elkHealth = false;
+let mongoHealth = false,
+    elkHealth = false;
 
 const connect = async () => {
     client.ping({
-    requestTimeout: 30000,
-}, function (error) {
-    if (error) {
-        console.error('elasticsearch cluster is down!');
-    } else {
-        console.log('Everything is ok');
+        requestTimeout: 30000,
+    }, function (error) {
+        if (error) {
+            console.error('elasticsearch cluster is down!');
+        } else {
+            console.log('Everything is ok');
             elkHealth = true;
-        client.indices.create({
-            index: 'plus-log'
-        }, function (err, resp, status) {
-            if (!err) {
-                console.log("create", resp);
-            }
-        });
-    }
-});
+            client.indices.create({
+                index: 'plus-log'
+            }, function (err, resp, status) {
+                if (!err) {
+                    console.log("create", resp);
+                }
+            });
+        }
+    });
     mongoose.connect("mongodb://mongodb:27017/microservice", function (error) {
         if (error) {
             console.log("error" + error);
@@ -42,7 +44,7 @@ const connect = async () => {
 };
 
 setInterval(function () {
-    if(!mongoHealth || !elkHealth)
+    if (!mongoHealth || !elkHealth)
         connect();
 }, 5000);
 
@@ -68,52 +70,28 @@ app.use(function (req, res, next) {
     next();
 });
 
-app.post("/multiply", (req, res, next) => {
+app.post("/update", async (req, res, next) => {
     try {
         console.log(req.body);
-        res.status(200).json({
-            Answer: parseInt(req.body.a) * parseInt(req.body.b)
-        });
+
+        let op = await shows.findByIdAndUpdate(req.body.id, req.body.update);
+
+        res.status(200).json(op);
 
         client.index({
-            index: 'multiply-log',
+            index: 'update-log',
             id: uuidv4(),
             type: 'GET',
             body: {
                 inputs: req.body,
                 start: req.startTime,
+                output: op,
                 end: (+new Date()).toString()
             }
         }, function (err, resp, status) {
             console.log(resp);
         });
 
-    } catch (ex) {
-        console.log(ex);
-        next(ex);
-    }
-});
-
-app.get("/multiply", (req, res, next) => {
-    try {
-        console.log(req.query);
-        res.status(200).json({
-            Answer: parseInt(req.query.a) * parseInt(req.query.b)
-        });
-
-        client.index({
-            index: 'multiply-log',
-            id: uuidv4(),
-            type: 'GET',
-            body: {
-                inputs: req.query,
-                start: req.startTime,
-                end: (+new Date()).toString()
-            }
-        }, function (err, resp, status) {
-            console.log(resp);
-        });
-        
     } catch (ex) {
         console.log(ex);
         next(ex);
@@ -122,7 +100,7 @@ app.get("/multiply", (req, res, next) => {
 
 app.use((err, req, res, next) => {
     const errorObj = {
-        service: "multiply"
+        service: "update"
     };
     if (err.status === 400) {
         if (err.validationErrors) {
@@ -150,7 +128,7 @@ app.use((err, req, res, next) => {
     mongoHealth = false;
     elkHealth = false;
     client.index({
-        index: 'multiply-log',
+        index: 'update-log',
         id: uuidv4(),
         type: 'GET',
         body: errorObj
