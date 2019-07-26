@@ -16,6 +16,15 @@
         {
             "type": "node",
             "request": "launch",
+            "name": "KProducer",
+            "program": "${workspaceFolder}/kafka-producer/index.js",
+            "outFiles": [
+                "${workspaceFolder}/**/*.js"
+            ]
+        },
+        {
+            "type": "node",
+            "request": "launch",
             "name": "Update",
             "program": "${workspaceFolder}/update/index.js",
             "outFiles": [

@@ -1,19 +1,16 @@
-const express = require("express");
-const bodyParser = require("body-parser");
-const app = express();
-const cors = require('cors');
-const config = require("./config");
+const kafka = require('kafka-node');
 const uuidv4 = require('uuid/v4');
 var mongoose = require('mongoose');
-const shows = require("./model/shows");
-
+var shows = require("./model/shows");
+let consumer;
 var elasticsearch = require('elasticsearch');
 var client = new elasticsearch.Client({
     hosts: ['http://elastic:changeme@elasticsearch:9200']
 });
 
 let mongoHealth = false,
-    elkHealth = false;
+    elkHealth = false,
+    kafkaHealth = false;
 
 const connect = async () => {
     client.ping({
@@ -24,11 +21,11 @@ const connect = async () => {
         } else {
             console.log('Everything is ok');
             elkHealth = true;
-            client.indices.create({
-                index: 'plus-log'
+            client.indices.delete({
+                index: 'update-log'
             }, function (err, resp, status) {
                 if (!err) {
-                    console.log("create", resp);
+                    console.log("update", resp);
                 }
             });
         }
@@ -46,7 +43,9 @@ const connect = async () => {
 setInterval(function () {
     if (!mongoHealth || !elkHealth)
         connect();
-    else {
+    else if (!kafkaHealth) {
+        bootstrap();
+    } else {
         client.index({
             index: 'update-log',
             id: uuidv4(),
@@ -56,50 +55,24 @@ setInterval(function () {
                 message: "Everything ok!"
             }
         }, function (err, resp, status) {
-            console.log(resp);
+            //console.log(resp);
         });
-    } 
+    }
 }, 5000);
 
-app.use((req, res, next) => {
-    req["startTime"] = (+new Date()).toString();
-    next();
-});
-
-app.use(bodyParser.json());
-
-app.use(
-    bodyParser.urlencoded({
-        extended: true
-    })
-);
-
-app.use(cors());
-
-app.use(function (req, res, next) {
-    res.header("Access-Control-Allow-Origin", "*");
-    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
-
-    next();
-});
-
-app.post("/update", async (req, res, next) => {
+const update = async (body) => {
     try {
-        console.log(req.body);
+        console.log(body);
 
-        let op = await shows.findByIdAndUpdate(req.body.id, req.body.update);
-
-        res.status(200).json(op);
+        let op = await shows.findByIdAndUpdate(body.id, body.update);
 
         client.index({
             index: 'update-log',
             id: uuidv4(),
             type: 'GET',
             body: {
-                inputs: req.body,
-                start: req.startTime,
+                inputs: body,
                 output: op,
-                end: (+new Date()).toString()
             }
         }, function (err, resp, status) {
             console.log(resp);
@@ -107,53 +80,51 @@ app.post("/update", async (req, res, next) => {
 
     } catch (ex) {
         console.log(ex);
-        next(ex);
     }
-});
+}
 
-app.get("/ping", (req, res) => res.send("pong"));
-
-app.use((err, req, res, next) => {
-    const errorObj = {
-        service: "update"
-    };
-    if (err.status === 400) {
-        if (err.validationErrors) {
-            errorObj.validationErrors = err.validationErrors;
-        }
-        errorObj.message = err.message || "Invalid Values Supplied";
-        errorObj.head = err.head || null;
-    } else if (err.status === 401 || err.status === 403) {
-        errorObj.head = err.head || null;
-        errorObj.message = err.message || "Unauthorized User";
-    } else if (err.status === 500) {
-        errorObj.head = err.head || null;
-
-        errorObj.message = err.message;
-
-        errorObj.message = "Internal Server Error";
-    } else if (err.status === 404) {
-        errorObj.head = err.head || null;
-        errorObj.message = err.message;
-    } else {
-        errorObj.head = err.head || null;
-
-        errorObj.message = err.message || "Unknown Error Occurred";
+const bootstrap = async (retry = 0) => {
+    try {
+        if(retry >= 10 || kafkaHealth)
+            return;
+        const Consumer = kafka.Consumer;
+        const client = new kafka.KafkaClient({
+            kafkaHost: 'kafkaq:9092',
+            autoConnect: true,
+        });
+        consumer = new Consumer(
+            client,
+            [{
+                topic: "update.com",
+                partition: 0
+            }], {
+                autoCommit: true,
+                fetchMaxWaitMs: 1000,
+                fetchMaxBytes: 1024 * 1024,
+                encoding: 'utf8',
+                fromOffset: false
+            }
+        );
+        consumer.on('message', async function (message) {
+            kafkaHealth = true;
+            console.log('here');
+            console.log(
+                'kafka-> ',
+                message.value
+            );
+            let body = JSON.parse(message.value.toString());
+            await update(body);
+        })
+        consumer.on('error', function (err) {
+            kafkaHealth = false;
+            console.log('error', err);
+            bootstrap(++retry);
+        });
+    } catch (e) {
+        console.log(e);
     }
-    mongoHealth = false;
-    elkHealth = false;
-    client.index({
-        index: 'update-log',
-        id: uuidv4(),
-        type: 'GET',
-        body: errorObj
-    }, function (err, resp, status) {
-        console.log(resp);
-    });
+}
 
-    next();
-    return res.status(err.status || 500).json(errorObj);
-});
 
 /**
  * Gracefully shut it down
@@ -163,9 +134,4 @@ process.on("SIGTERM", () => {
 });
 process.on("SIGINT", () => {
     process.exit(0);
-});
-
-app.listen(config.PORT, "0.0.0.0", () => {
-    console.log("Starting server on port ", config.PORT);
-    console.log(config);
 });
