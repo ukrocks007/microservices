@@ -1,19 +1,16 @@
-const express = require("express");
-const bodyParser = require("body-parser");
-const app = express();
-const cors = require('cors');
-const config = require("./config");
+const kafka = require('kafka-node');
 const uuidv4 = require('uuid/v4');
 var mongoose = require('mongoose');
 var shows = require("./model/shows");
-
+let consumer;
 var elasticsearch = require('elasticsearch');
 var client = new elasticsearch.Client({
     hosts: ['http://elastic:changeme@elasticsearch:9200']
 });
 
 let mongoHealth = false,
-    elkHealth = false;
+    elkHealth = false,
+    kafkaHealth = false;
 
 const connect = async () => {
     client.ping({
@@ -28,7 +25,7 @@ const connect = async () => {
                 index: 'create-log'
             }, function (err, resp, status) {
                 if (!err) {
-                    console.log("create", resp);
+                    //console.log("create", resp);
                 }
             });
         }
@@ -46,7 +43,9 @@ const connect = async () => {
 setInterval(function () {
     if (!mongoHealth || !elkHealth)
         connect();
-    else {
+    else if (!kafkaHealth) {
+        bootstrap();
+    } else {
         client.index({
             index: 'create-log',
             id: uuidv4(),
@@ -58,42 +57,20 @@ setInterval(function () {
         }, function (err, resp, status) {
             console.log(resp);
         });
-    } 
+    }
 }, 5000);
 
-app.use((req, res, next) => {
-    req["startTime"] = (+new Date()).toString();
-    next();
-});
-
-app.use(bodyParser.json());
-
-app.use(
-    bodyParser.urlencoded({
-        extended: true
-    })
-);
-
-app.use(cors());
-
-app.use(function (req, res, next) {
-    res.header("Access-Control-Allow-Origin", "*");
-    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
-
-    next();
-});
-
-app.post("/create", async (req, res, next) => {
+const create = async (body) => {
     try {
-        console.log(req.body);
+        console.log(body);
 
-        let title = req.body.title;
-        let rating = req.body.rating;
-        let ratingLevel = req.body.ratingLevel;
-        let ratingDescription = req.body.ratingDescription;
-        let releaseYear = req.body.releaseYear;
-        let userRatingScore = req.body.userRatingScore;
-        let userRatingSize = req.body.userRatingSize;
+        let title = body.title;
+        let rating = body.rating;
+        let ratingLevel = body.ratingLevel;
+        let ratingDescription = body.ratingDescription;
+        let releaseYear = body.releaseYear;
+        let userRatingScore = body.userRatingScore;
+        let userRatingSize = body.userRatingSize;
 
         let show = await new shows({
             title: title,
@@ -105,17 +82,13 @@ app.post("/create", async (req, res, next) => {
             userRatingSize: userRatingSize
         }).save();
 
-        res.status(200).json(show);
-
         client.index({
             index: 'create-log',
             id: uuidv4(),
             type: 'GET',
             body: {
-                inputs: req.body,
+                inputs: body,
                 output: show,
-                start: req.startTime,
-                end: (+new Date()).toString()
             }
         }, function (err, resp, status) {
             console.log(resp);
@@ -123,57 +96,51 @@ app.post("/create", async (req, res, next) => {
 
     } catch (ex) {
         console.log(ex);
-        next(ex);
     }
-});
+}
 
-app.get("/ping", (req, res) => res.send("pong"));
-
-app.use((err, req, res, next) => {
-    const errorObj = {
-        service: "create"
-    };
-    if (err.status === 400) {
-        if (err.validationErrors) {
-            errorObj.validationErrors = err.validationErrors;
-        }
-        errorObj.message = err.message || "Invalid Values Supplied";
-        errorObj.head = err.head || null;
-    } else if (err.status === 401 || err.status === 403) {
-        errorObj.head = err.head || null;
-        errorObj.message = err.message || "Unauthorized User";
-    } else if (err.status === 500) {
-        errorObj.head = err.head || null;
-
-        errorObj.message = err.message;
-
-        errorObj.message = "Internal Server Error";
-    } else if (err.status === 404) {
-        errorObj.head = err.head || null;
-        errorObj.message = err.message;
-    } else {
-        errorObj.head = err.head || null;
-
-        errorObj.message = err.message || "Unknown Error Occurred";
+const bootstrap = async (retry = 0) => {
+    try {
+        if(retry >= 10 || kafkaHealth)
+            return;
+        const Consumer = kafka.Consumer;
+        const client = new kafka.KafkaClient({
+            kafkaHost: 'kafkaq:9092',
+            autoConnect: true,
+        });
+        consumer = new Consumer(
+            client,
+            [{
+                topic: "create.com",
+                partition: 0
+            }], {
+                autoCommit: true,
+                fetchMaxWaitMs: 1000,
+                fetchMaxBytes: 1024 * 1024,
+                encoding: 'utf8',
+                fromOffset: false
+            }
+        );
+        consumer.on('message', async function (message) {
+            kafkaHealth = true;
+            console.log('here');
+            console.log(
+                'kafka-> ',
+                message.value
+            );
+            let body = JSON.parse(message.value.toString());
+            await create(body);
+        })
+        consumer.on('error', function (err) {
+            kafkaHealth = false;
+            console.log('error', err);
+            bootstrap(++retry);
+        });
+    } catch (e) {
+        console.log(e);
     }
-    mongoHealth = false;
-    elkHealth = false;
-    client.index({
-        index: 'create-log',
-        id: uuidv4(),
-        type: 'GET',
-        body: {
-            inputs: errorObj,
-            start: req.startTime,
-            end: (+new Date()).toString()
-        }
-    }, function (err, resp, status) {
-        console.log(resp);
-    });
+}
 
-    next();
-    return res.status(err.status || 500).json(errorObj);
-});
 
 /**
  * Gracefully shut it down
@@ -183,9 +150,4 @@ process.on("SIGTERM", () => {
 });
 process.on("SIGINT", () => {
     process.exit(0);
-});
-
-app.listen(config.PORT, "0.0.0.0", () => {
-    console.log("Starting server on port ", config.PORT);
-    console.log(config);
 });

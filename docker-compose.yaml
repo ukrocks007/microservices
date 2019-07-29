@@ -78,6 +78,52 @@ services:
         delay: 5s
         max_attempts: 3
         window: 120s
+
+  zookeeper:
+    image: wurstmeister/zookeeper
+    networks:
+      - kong-net
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+ 
+  kafka:
+    image: wurstmeister/kafka
+    ports:
+    - "9092:9092"
+    hostname: kafka
+    environment:
+      KAFKA_ADVERTISED_HOST_NAME: kafka
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+    networks:
+      - kong-net
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  kafkaproducer:
+    build: ./kafka-producer
+    ports:
+      - "3004:3004"
+    networks:
+      - kong-net
+    depends_on:
+      - elasticsearch
+      - kafka
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    links:
+      - kafka:kafkaq
   
   create:
     build: ./create
@@ -88,12 +134,15 @@ services:
     depends_on:
       - elasticsearch
       - mongodb
+      - kafka
     deploy:
       restart_policy:
         condition: on-failure
         delay: 5s
         max_attempts: 3
         window: 120s
+    links:
+      - kafka:kafkaq
 
   read:
     build: ./read
@@ -104,6 +153,7 @@ services:
     depends_on:
       - elasticsearch
       - mongodb
+      - kafka
     deploy:
       restart_policy:
         condition: on-failure
@@ -120,12 +170,15 @@ services:
     depends_on:
       - elasticsearch
       - mongodb
+      - kafka
     deploy:
       restart_policy:
         condition: on-failure
         delay: 5s
         max_attempts: 3
         window: 120s
+    links:
+      - kafka:kafkaq
 
   delete:
     build: ./delete
@@ -136,12 +189,15 @@ services:
     depends_on:
       - elasticsearch
       - mongodb
+      - kafka
     deploy:
       restart_policy:
         condition: on-failure
         delay: 5s
         max_attempts: 3
         window: 120s
+    links:
+      - kafka:kafkaq
 
 networks:
   kong-net:
