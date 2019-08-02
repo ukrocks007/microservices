@@ -5,10 +5,10 @@
 docker stop kong
 docker stop kong-database
 
-docker system prune
-
 docker-compose down
-docker-compose up -d --build
+
+docker system prune
+docker-compose up -d $1
 
 sleep 5
 
