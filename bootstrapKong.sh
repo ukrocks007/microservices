@@ -2,9 +2,9 @@
 
 # Author : Utkarsh Mehta
 
-docker run -d --name kong-database --network=microservices_kong-net -p 5432:5432 -e "POSTGRES_USER=kong" -e "POSTGRES_DB=kong" postgres:9.6
+docker run -d --name kong-database --network=microservices_kong-net -p 5433:5432 -e "POSTGRES_USER=kong" -e "POSTGRES_DB=kong" postgres:9.6
 
-sleep 5
+sleep 10
 
 docker run --rm --network=microservices_kong-net -e "KONG_DATABASE=postgres" -e "KONG_PG_HOST=kong-database" -e "KONG_CASSANDRA_CONTACT_POINTS=kong-database" kong:latest kong migrations bootstrap
 
