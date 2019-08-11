@@ -72,6 +72,8 @@ services:
     - "27018:27017"
     networks:
       - kong-net
+    volumes: 
+      - ./mongodb/db:/data/db
     deploy:
       restart_policy:
         condition: on-failure
